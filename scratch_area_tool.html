@@ -1,0 +1,921 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Wound Healing Scratch Area Tool — Author: Wukun (Kenny) Ouyang, Cornell University</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin: 0;
+      padding: 0;
+      background: #020617;
+      color: #e5e7eb;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+    header {
+      padding: 12px 20px;
+      background: #020617;
+      color: #fff;
+      font-size: 16px;
+      border-bottom: 1px solid #1f2937;
+    }
+    main {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+    #controls {
+      width: 320px;
+      padding: 16px;
+      box-sizing: border-box;
+      background: #020617;
+      border-right: 1px solid #1f2937;
+      overflow-y: auto;
+    }
+    #canvasWrapper {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #020617;
+      position: relative;
+    }
+    canvas {
+      background: #020617;
+      box-shadow: 0 0 0 1px #1f2937, 0 10px 30px rgba(15, 23, 42, 0.6);
+      max-width: 100%;
+      max-height: 100%;
+    }
+    h2 {
+      font-size: 15px;
+      margin: 12px 0 6px;
+    }
+    .section {
+      margin-bottom: 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid #1f2937;
+    }
+    label {
+      font-size: 13px;
+      display: block;
+      margin: 6px 0 2px;
+    }
+    input[type="file"] {
+      width: 100%;
+    }
+    input[type="number"],
+    input[type="text"] {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 4px 6px;
+      font-size: 13px;
+      border-radius: 4px;
+      border: 1px solid #374151;
+      background: #020617;
+      color: #e5e7eb;
+    }
+    button {
+      margin: 4px 4px 4px 0;
+      padding: 5px 10px;
+      font-size: 13px;
+      border-radius: 4px;
+      border: 1px solid #374151;
+      background: #020617;
+      color: #e5e7eb;
+      cursor: pointer;
+    }
+    button.primary {
+      background: #2563eb;
+      color: #fff;
+      border-color: #2563eb;
+    }
+    button.danger {
+      background: #f97373;
+      color: #fff;
+      border-color: #f97373;
+    }
+    button.active {
+      box-shadow: 0 0 0 2px rgba(37,99,235,0.5);
+    }
+    #status, #areaResult {
+      font-size: 13px;
+      margin-top: 4px;
+      white-space: pre-line;
+    }
+    #legend {
+      font-size: 12px;
+      margin-top: 6px;
+      color: #9ca3af;
+      line-height: 1.4;
+    }
+    .colorBox {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      margin-right: 4px;
+      vertical-align: middle;
+    }
+    #dropZone {
+      margin-top: 8px;
+      padding: 10px;
+      border: 1px dashed #374151;
+      border-radius: 4px;
+      font-size: 12px;
+      text-align: center;
+      color: #9ca3af;
+      background: rgba(15, 23, 42, 0.6);
+      transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+    }
+    #dropZone.dragover {
+      border-color: #2563eb;
+      background: rgba(37, 99, 235, 0.12);
+      color: #e5e7eb;
+    }
+    #imageSelect {
+      width: 100%;
+      box-sizing: border-box;
+      margin-top: 6px;
+      font-size: 12px;
+      background: #020617;
+      color: #e5e7eb;
+      border-radius: 4px;
+      border: 1px solid #374151;
+    }
+  </style>
+</head>
+<body>
+  <header>Wound Healing Scratch Area (Automatic Front Detection) — Author: Wukun (Kenny) Ouyang, Cornell University</header>
+  <main>
+    <div id="controls">
+      <div class="section">
+        <h2>1. Upload microscopy image</h2>
+        <input type="file" id="imageLoader" accept="image/*" multiple />
+        <div id="dropZone">Or drag & drop one or more images here</div>
+        <label for="imageSelect" style="font-size:12px;color:#9ca3af;margin-top:8px;display:block;">Loaded images (click to switch):</label>
+        <select id="imageSelect" size="4" style="display:none;"></select>
+        <div id="status"></div>
+      </div>
+
+      <div class="section">
+        <h2>2. Set scale bar</h2>
+        <label>Real length (µm):</label>
+        <input type="number" id="realLength" value="100" min="0.0001" step="0.1" />
+        <div style="margin-top:4px;">
+          <button id="modeScale">Draw scale bar on image</button>
+        </div>
+        <div style="font-size:12px;color:#9ca3af;margin-top:4px;">
+          Click the two endpoints of the scale bar (e.g. "100 µm") to get its pixel length.
+        </div>
+        <div id="scaleInfo" style="font-size:12px;margin-top:4px;"></div>
+      </div>
+
+      <div class="section">
+        <h2>3. Compute scratch area</h2>
+        <button id="calcArea" class="primary">Auto-detect fronts & calculate area</button>
+        <div style="font-size:12px;color:#9ca3af;margin-top:4px;">
+          The tool will threshold the image (Otsu) and detect the upper and lower cell fronts automatically. Pure white and pure black pixels are always excluded when computing the threshold (e.g. to avoid bias from scale bars).
+        </div>
+        <button id="batchAnalyze" style="margin-top:6px;">Batch analyze all loaded images (use current scale)</button>
+        <div style="font-size:12px;color:#9ca3af;margin-top:4px;">
+          Define a scale bar on one image, then run batch analysis to apply the same scale to all loaded images.
+        </div>
+        <div id="legend" style="margin-top:8px;">
+          <span class="colorBox" style="background:red;"></span>Scale bar line<br>
+          <span class="colorBox" style="background:#10b981;"></span>Upper cell front (auto)<br>
+          <span class="colorBox" style="background:#f59e0b;"></span>Lower cell front (auto)
+        </div>
+        <div id="areaResult" style="margin-top:8px;"></div>
+      </div>
+
+      <div class="section">
+        <h2>4. Analysis summary</h2>
+        <div style="font-size:12px;color:#9ca3af;margin-bottom:6px;">
+          Each time you calculate the scratch area, the result will be added to the table below.
+        </div>
+        <div style="max-height:200px;overflow:auto;border:1px solid #1f2937;border-radius:4px;">
+          <table id="resultsTable" style="width:100%;border-collapse:collapse;font-size:12px;">
+            <thead>
+              <tr style="background:#020617;">
+                <th style="border-bottom:1px solid #1f2937;padding:4px 6px;text-align:left;">#</th>
+                <th style="border-bottom:1px solid #1f2937;padding:4px 6px;text-align:left;">Image</th>
+                <th style="border-bottom:1px solid #1f2937;padding:4px 6px;text-align:right;">Pixel area (px²)</th>
+                <th style="border-bottom:1px solid #1f2937;padding:4px 6px;text-align:right;">Scratch area (µm²)</th>
+                <th style="border-bottom:1px solid #1f2937;padding:4px 6px;text-align:right;">Scale (µm/px)</th>
+              </tr>
+            </thead>
+            <tbody id="resultsBody"></tbody>
+          </table>
+        </div>
+        <button id="exportCsv" style="margin-top:6px;">Export results as CSV</button>
+      </div>
+    </div>
+
+    <div id="canvasWrapper">
+      <canvas id="imageCanvas"></canvas>
+    </div>
+  </main>
+
+  <script>
+    const canvas = document.getElementById('imageCanvas');
+    const ctx = canvas.getContext('2d');
+    const imageLoader = document.getElementById('imageLoader');
+    const imageSelect = document.getElementById('imageSelect');
+    const dropZone = document.getElementById('dropZone');
+    const canvasWrapper = document.getElementById('canvasWrapper');
+    const modeScaleBtn = document.getElementById('modeScale');
+    const calcAreaBtn = document.getElementById('calcArea');
+    const batchAnalyzeBtn = document.getElementById('batchAnalyze');
+    const statusEl = document.getElementById('status');
+    const areaResultEl = document.getElementById('areaResult');
+    const scaleInfoEl = document.getElementById('scaleInfo');
+    const realLengthInput = document.getElementById('realLength');
+    const resultsBody = document.getElementById('resultsBody');
+    const exportCsvBtn = document.getElementById('exportCsv');
+
+    let img = null;
+    let mode = null;
+    let scalePoints = [];
+    let upperPoints = [];
+    let lowerPoints = [];
+    let pixelsPerUm = null;
+    let files = [];
+    let currentFileIndex = -1;
+    const analysisResults = [];
+    let globalUmPerPixel = null;
+
+    function resetMeasurementState() {
+      scalePoints = [];
+      upperPoints = [];
+      lowerPoints = [];
+      pixelsPerUm = null;
+      scaleInfoEl.textContent = '';
+      areaResultEl.textContent = '';
+    }
+
+    function setMode(newMode) {
+      mode = newMode;
+      modeScaleBtn.classList.remove('active');
+      if (newMode === 'scale') modeScaleBtn.classList.add('active');
+
+      let msg = '';
+      if (newMode === 'scale') msg = 'Mode: scale bar. Click the two ends of the scale bar.';
+      statusEl.textContent = msg;
+    }
+
+    function resizeCanvasToImage() {
+      if (!img) return;
+      const maxW = canvasWrapper.clientWidth - 40;
+      const maxH = canvasWrapper.clientHeight - 40;
+      let w = img.width;
+      let h = img.height;
+      const scale = Math.min(maxW / w, maxH / h, 1);
+      w = Math.round(w * scale);
+      h = Math.round(h * scale);
+
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = w * dpr;
+      canvas.height = h * dpr;
+      canvas.style.width = w + 'px';
+      canvas.style.height = h + 'px';
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      drawAll();
+    }
+
+    function drawAll() {
+      if (!img) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        return;
+      }
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.clientWidth, canvas.clientHeight);
+
+      // fill scratch area polygon (very light pink) if both fronts exist
+      if (upperPoints.length > 1 && lowerPoints.length > 1) {
+        ctx.save();
+        ctx.fillStyle = 'rgba(255, 182, 193, 0.18)'; // very light pink
+        ctx.beginPath();
+        ctx.moveTo(upperPoints[0].x, upperPoints[0].y);
+        for (let i = 1; i < upperPoints.length; i++) {
+          ctx.lineTo(upperPoints[i].x, upperPoints[i].y);
+        }
+        for (let i = lowerPoints.length - 1; i >= 0; i--) {
+          ctx.lineTo(lowerPoints[i].x, lowerPoints[i].y);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+
+      if (scalePoints.length > 0) {
+        ctx.strokeStyle = 'red';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(scalePoints[0].x, scalePoints[0].y);
+        if (scalePoints.length === 2) {
+          ctx.lineTo(scalePoints[1].x, scalePoints[1].y);
+        }
+        ctx.stroke();
+        scalePoints.forEach(p => {
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+          ctx.fillStyle = 'red';
+          ctx.fill();
+        });
+      }
+
+      drawPolyline(upperPoints, '#10b981');
+      drawPolyline(lowerPoints, '#f59e0b');
+    }
+
+    function drawPolyline(points, color) {
+      if (points.length === 0) return;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(points[0].x, points[0].y);
+      for (let i = 1; i < points.length; i++) {
+        ctx.lineTo(points[i].x, points[i].y);
+      }
+      ctx.stroke();
+      points.forEach(p => {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 2.5, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.fill();
+      });
+    }
+
+    function getMousePos(evt) {
+      const rect = canvas.getBoundingClientRect();
+      const x = (evt.clientX - rect.left);
+      const y = (evt.clientY - rect.top);
+      return { x, y };
+    }
+
+    canvas.addEventListener('click', (evt) => {
+      if (!img || !mode) return;
+      const p = getMousePos(evt);
+
+      if (mode === 'scale') {
+        if (scalePoints.length >= 2) scalePoints = [];
+        scalePoints.push(p);
+        if (scalePoints.length === 2) {
+          const dx = scalePoints[1].x - scalePoints[0].x;
+          const dy = scalePoints[1].y - scalePoints[0].y;
+          const pixelLen = Math.sqrt(dx*dx + dy*dy);
+          const realLen = parseFloat(realLengthInput.value);
+          if (realLen > 0) {
+            pixelsPerUm = pixelLen / realLen;
+            const umPerPixel = 1 / pixelsPerUm;
+            globalUmPerPixel = umPerPixel;
+            scaleInfoEl.textContent =
+              `Scale bar length: ${pixelLen.toFixed(2)} px\n` +
+              `Scale: ${pixelsPerUm.toFixed(4)} px/µm  (≈ ${umPerPixel.toFixed(4)} µm/px)`;
+          } else {
+            scaleInfoEl.textContent = 'Real length must be greater than 0.';
+          }
+        }
+      }
+      drawAll();
+    });
+
+    function refreshImageList() {
+      imageSelect.innerHTML = '';
+      files.forEach((file, idx) => {
+        const opt = document.createElement('option');
+        opt.value = idx;
+        opt.textContent = file.name;
+        imageSelect.appendChild(opt);
+      });
+      if (files.length > 0) {
+        imageSelect.style.display = 'block';
+        imageSelect.value = String(currentFileIndex);
+      } else {
+        imageSelect.style.display = 'none';
+      }
+    }
+
+    function loadImageFromIndex(index) {
+      if (index < 0 || index >= files.length) return;
+      const file = files[index];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(evt) {
+        img = new Image();
+        img.onload = function() {
+          resetMeasurementState();
+          resizeCanvasToImage();
+          statusEl.textContent = `Image "${file.name}" loaded. Please set the scale bar first.`;
+        };
+        img.src = evt.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function addFiles(newFiles) {
+      if (!newFiles || newFiles.length === 0) return;
+      const arr = Array.from(newFiles);
+      let added = false;
+      arr.forEach(f => {
+        if (!f.type || !f.type.startsWith('image/')) return;
+        files.push(f);
+        added = true;
+      });
+      if (!added) return;
+      if (currentFileIndex === -1) {
+        currentFileIndex = 0;
+        loadImageFromIndex(currentFileIndex);
+      }
+      refreshImageList();
+    }
+
+    function loadImageForBatch(index) {
+      return new Promise((resolve) => {
+        if (index < 0 || index >= files.length) {
+          resolve(false);
+          return;
+        }
+        const file = files[index];
+        if (!file) {
+          resolve(false);
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = function(evt) {
+          const image = new Image();
+          image.onload = function() {
+            img = image;
+            currentFileIndex = index;
+            if (files.length > 0) {
+              imageSelect.style.display = 'block';
+              imageSelect.value = String(currentFileIndex);
+            }
+            resetMeasurementState();
+            resizeCanvasToImage();
+            statusEl.textContent = `Batch analyzing image "${file.name}"...`;
+            resolve(true);
+          };
+          image.onerror = function() {
+            resolve(false);
+          };
+          image.src = evt.target.result;
+        };
+        reader.onerror = function() {
+          resolve(false);
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    imageLoader.addEventListener('change', (e) => {
+      addFiles(e.target.files);
+      if (files.length > 0 && currentFileIndex >= 0) {
+        loadImageFromIndex(currentFileIndex);
+      }
+    });
+
+    imageSelect.addEventListener('change', (e) => {
+      const idx = parseInt(e.target.value, 10);
+      if (Number.isNaN(idx)) return;
+      currentFileIndex = idx;
+      loadImageFromIndex(currentFileIndex);
+    });
+
+    function preventDefaults(e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
+    ['dragenter', 'dragover'].forEach(eventName => {
+      dropZone.addEventListener(eventName, (e) => {
+        preventDefaults(e);
+        dropZone.classList.add('dragover');
+      });
+    });
+
+    ['dragleave', 'drop'].forEach(eventName => {
+      dropZone.addEventListener(eventName, (e) => {
+        preventDefaults(e);
+        if (eventName === 'dragleave') {
+          dropZone.classList.remove('dragover');
+        }
+      });
+    });
+
+    dropZone.addEventListener('drop', (e) => {
+      preventDefaults(e);
+      dropZone.classList.remove('dragover');
+      if (e.dataTransfer && e.dataTransfer.files) {
+        addFiles(e.dataTransfer.files);
+        if (files.length > 0 && currentFileIndex >= 0) {
+          loadImageFromIndex(currentFileIndex);
+        }
+      }
+    });
+
+    window.addEventListener('resize', resizeCanvasToImage);
+
+    modeScaleBtn.addEventListener('click', () => setMode('scale'));
+
+    // Scale bar pixels: pure black / pure white (built-in scale bars are typically these)
+    const PURE_BLACK_MAX = 5;
+    const PURE_WHITE_MIN = 250;
+
+    /** Scale pixel mask: 1 = pure black or white (excluded from threshold), 0 = included */
+    function buildScaleMask(gray) {
+      const mask = new Uint8Array(gray.length);
+      for (let i = 0; i < gray.length; i++) {
+        const g = gray[i];
+        if (g <= PURE_BLACK_MAX || g >= PURE_WHITE_MIN) mask[i] = 1;
+      }
+      return mask;
+    }
+
+    /** Otsu threshold with pure black/white pixels excluded (e.g. to avoid scale bar bias) */
+    function computeOtsuThresholdExcludingScale(gray, scaleMask) {
+      const hist = new Array(256).fill(0);
+      let total = 0;
+      for (let i = 0; i < gray.length; i++) {
+        if (scaleMask[i]) continue;
+        hist[gray[i]]++;
+        total++;
+      }
+      if (total === 0) return 128;
+      let sum = 0;
+      for (let t = 0; t < 256; t++) sum += t * hist[t];
+      let sumB = 0;
+      let wB = 0;
+      let wF = 0;
+      let varMax = 0;
+      let threshold = 0;
+      for (let t = 0; t < 256; t++) {
+        wB += hist[t];
+        if (wB === 0) continue;
+        wF = total - wB;
+        if (wF === 0) break;
+        sumB += t * hist[t];
+        const mB = sumB / wB;
+        const mF = (sum - sumB) / wF;
+        const varBetween = wB * wF * (mB - mF) * (mB - mF);
+        if (varBetween > varMax) {
+          varMax = varBetween;
+          threshold = t;
+        }
+      }
+      return threshold;
+    }
+
+    function computeOtsuThreshold(gray) {
+      const hist = new Array(256).fill(0);
+      const total = gray.length;
+      for (let i = 0; i < total; i++) {
+        hist[gray[i]]++;
+      }
+      let sum = 0;
+      for (let t = 0; t < 256; t++) {
+        sum += t * hist[t];
+      }
+      let sumB = 0;
+      let wB = 0;
+      let wF = 0;
+      let varMax = 0;
+      let threshold = 0;
+      for (let t = 0; t < 256; t++) {
+        wB += hist[t];
+        if (wB === 0) continue;
+        wF = total - wB;
+        if (wF === 0) break;
+        sumB += t * hist[t];
+        const mB = sumB / wB;
+        const mF = (sum - sumB) / wF;
+        const varBetween = wB * wF * (mB - mF) * (mB - mF);
+        if (varBetween > varMax) {
+          varMax = varBetween;
+          threshold = t;
+        }
+      }
+      return threshold;
+    }
+
+    function computeAvgMaxZeroRun(gray, w, h, cellBrighter, T) {
+      let sumMax = 0;
+      for (let x = 0; x < w; x++) {
+        let best = 0;
+        let cur = 0;
+        for (let y = 0; y < h; y++) {
+          const v = gray[y * w + x];
+          const isCell = cellBrighter ? v > T : v < T;
+          if (!isCell) {
+            cur++;
+          } else {
+            if (cur > best) best = cur;
+            cur = 0;
+          }
+        }
+        if (cur > best) best = cur;
+        sumMax += best;
+      }
+      return sumMax / w;
+    }
+
+    function smoothFront(points, maxDelta) {
+      if (points.length < 3) return;
+      // simple spike removal: if a point deviates too much from the average of its neighbors, pull it back
+      for (let iter = 0; iter < 2; iter++) {
+        for (let i = 1; i < points.length - 1; i++) {
+          const prevY = points[i - 1].y;
+          const nextY = points[i + 1].y;
+          const avgY = (prevY + nextY) / 2;
+          const dy = points[i].y - avgY;
+          if (Math.abs(dy) > maxDelta) {
+            points[i].y = avgY;
+          }
+        }
+      }
+    }
+
+    function autoDetectFronts() {
+      upperPoints = [];
+      lowerPoints = [];
+      if (!img) return false;
+      const rect = canvas.getBoundingClientRect();
+      const cssW = rect.width;
+      const cssH = rect.height;
+      if (cssW === 0 || cssH === 0) return false;
+      const dpr = canvas.width / cssW;
+      const w = canvas.width;
+      const h = canvas.height;
+      // Offscreen canvas with only the current image (no red scale or green/orange front lines from main canvas)
+      const off = document.createElement('canvas');
+      off.width = w;
+      off.height = h;
+      const offCtx = off.getContext('2d');
+      offCtx.drawImage(img, 0, 0, w, h);
+      const imageData = offCtx.getImageData(0, 0, w, h);
+      const data = imageData.data;
+      const gray = new Uint8Array(w * h);
+      for (let i = 0, j = 0; i < data.length; i += 4, j++) {
+        const r = data[i];
+        const g = data[i + 1];
+        const b = data[i + 2];
+        gray[j] = (r + g + b) / 3;
+      }
+      // Exclude all pure white and pure black pixels when computing threshold (e.g. built-in scale bar)
+      const scaleMask = buildScaleMask(gray);
+      const T = computeOtsuThresholdExcludingScale(gray, scaleMask);
+
+      // Decide automatically whether cells are brighter or darker than the scratch region,
+      // by choosing the mapping that yields a larger average background (scratch) band.
+      const avgGapCellsBrighter = computeAvgMaxZeroRun(gray, w, h, true, T);
+      const avgGapCellsDarker = computeAvgMaxZeroRun(gray, w, h, false, T);
+      const cellBrighter = avgGapCellsBrighter > avgGapCellsDarker;
+
+      function isCell(val) {
+        return cellBrighter ? val > T : val < T;
+      }
+
+      const minGapPx = h * 0.05; // minimal vertical size for the central scratch band
+
+      for (let x = 0; x < w; x++) {
+        let bestStart = -1;
+        let bestEnd = -1;
+        let curStart = -1;
+
+        for (let y = 0; y < h; y++) {
+          const v = gray[y * w + x];
+          const cell = isCell(v);
+          if (!cell) {
+            if (curStart === -1) curStart = y;
+          } else if (curStart !== -1) {
+            if (bestStart === -1 || (y - 1 - curStart) > (bestEnd - bestStart)) {
+              bestStart = curStart;
+              bestEnd = y - 1;
+            }
+            curStart = -1;
+          }
+        }
+        if (curStart !== -1) {
+          if (bestStart === -1 || (h - 1 - curStart) > (bestEnd - bestStart)) {
+            bestStart = curStart;
+            bestEnd = h - 1;
+          }
+        }
+
+        if (bestStart === -1) continue;
+        const gapLen = bestEnd - bestStart + 1;
+        if (gapLen < minGapPx) continue;
+
+        let yTop = bestStart - 1;
+        let yBottom = bestEnd + 1;
+        if (yTop < 0) yTop = 0;
+        if (yBottom >= h) yBottom = h - 1;
+
+        upperPoints.push({ x: x / dpr, y: yTop / dpr });
+        lowerPoints.push({ x: x / dpr, y: yBottom / dpr });
+      }
+
+      const step = Math.max(1, Math.floor(w / 400));
+      if (step > 1) {
+        upperPoints = upperPoints.filter((_, idx) => idx % step === 0);
+        lowerPoints = lowerPoints.filter((_, idx) => idx % step === 0);
+      }
+
+      // smooth obvious spikes along the fronts (work in CSS coordinate system)
+      const maxDelta = cssH * 0.03; // allow ~3% of image height deviation; larger is considered a spike
+      smoothFront(upperPoints, maxDelta);
+      smoothFront(lowerPoints, maxDelta);
+
+      return upperPoints.length > 2 && lowerPoints.length > 2;
+    }
+
+    function polygonArea(points) {
+      let area = 0;
+      const n = points.length;
+      if (n < 3) return 0;
+      for (let i = 0; i < n; i++) {
+        const j = (i + 1) % n;
+        area += points[i].x * points[j].y - points[j].x * points[i].y;
+      }
+      return Math.abs(area) / 2;
+    }
+
+    function renderResultsTable() {
+      resultsBody.innerHTML = '';
+      analysisResults.forEach((row, idx) => {
+        const tr = document.createElement('tr');
+        tr.style.background = idx % 2 === 0 ? '#020617' : '#030712';
+
+        const c1 = document.createElement('td');
+        c1.textContent = String(idx + 1);
+        c1.style.padding = '3px 6px';
+        c1.style.borderBottom = '1px solid #111827';
+
+        const c2 = document.createElement('td');
+        c2.textContent = row.imageName;
+        c2.style.padding = '3px 6px';
+        c2.style.borderBottom = '1px solid #111827';
+
+        const c3 = document.createElement('td');
+        c3.textContent = row.pixelArea.toFixed(2);
+        c3.style.padding = '3px 6px';
+        c3.style.textAlign = 'right';
+        c3.style.borderBottom = '1px solid #111827';
+
+        const c4 = document.createElement('td');
+        c4.textContent = row.scratchArea.toFixed(2);
+        c4.style.padding = '3px 6px';
+        c4.style.textAlign = 'right';
+        c4.style.borderBottom = '1px solid #111827';
+
+        const c5 = document.createElement('td');
+        c5.textContent = row.umPerPx.toFixed(4);
+        c5.style.padding = '3px 6px';
+        c5.style.textAlign = 'right';
+        c5.style.borderBottom = '1px solid #111827';
+
+        tr.appendChild(c1);
+        tr.appendChild(c2);
+        tr.appendChild(c3);
+        tr.appendChild(c4);
+        tr.appendChild(c5);
+        resultsBody.appendChild(tr);
+      });
+    }
+
+    function addAnalysisResult(imageName, areaPx2, areaUm2, umPerPx, realLen) {
+      analysisResults.push({
+        imageName,
+        pixelArea: areaPx2,
+        scratchArea: areaUm2,
+        umPerPx,
+        realLengthUm: isNaN(realLen) ? null : realLen
+      });
+      renderResultsTable();
+    }
+
+    calcAreaBtn.addEventListener('click', () => {
+      areaResultEl.textContent = '';
+      if (!pixelsPerUm) {
+        areaResultEl.textContent = 'Please draw the scale bar and set the real length first.';
+        return;
+      }
+      const ok = autoDetectFronts();
+      if (!ok) {
+        areaResultEl.textContent = 'Automatic detection failed. Please check the image quality and scale.';
+        return;
+      }
+
+      const poly = [];
+      upperPoints.forEach(p => poly.push(p));
+      for (let i = lowerPoints.length - 1; i >= 0; i--) {
+        poly.push(lowerPoints[i]);
+      }
+
+      const areaPx2 = polygonArea(poly);
+      const umPerPixel = 1 / pixelsPerUm;
+      const areaUm2 = areaPx2 * umPerPixel * umPerPixel;
+
+      areaResultEl.textContent =
+        `Pixel area: ${areaPx2.toFixed(2)} px²\n` +
+        `Scratch area: ${areaUm2.toFixed(2)} µm²`;
+      drawAll();
+
+      const imageName = (currentFileIndex >= 0 && files[currentFileIndex])
+        ? files[currentFileIndex].name
+        : 'Current image';
+      const realLen = parseFloat(realLengthInput.value);
+      addAnalysisResult(imageName, areaPx2, areaUm2, umPerPixel, realLen);
+    });
+
+    exportCsvBtn.addEventListener('click', () => {
+      if (analysisResults.length === 0) {
+        alert('No analysis results to export yet.');
+        return;
+      }
+      const header = [
+        'Index',
+        'Image name',
+        'Pixel area (px^2)',
+        'Scratch area (um^2)',
+        'Scale (um/px)',
+        'Real scale bar length (um)'
+      ];
+      const rows = analysisResults.map((row, idx) => ([
+        idx + 1,
+        row.imageName,
+        row.pixelArea.toFixed(4),
+        row.scratchArea.toFixed(4),
+        row.umPerPx.toFixed(6),
+        row.realLengthUm == null ? '' : row.realLengthUm
+      ]));
+
+      const csvLines = [];
+      const escapeCell = (value) => {
+        const str = String(value);
+        if (str.includes('"') || str.includes(',') || str.includes('\n')) {
+          return `"${str.replace(/"/g, '""')}"`;
+        }
+        return str;
+      };
+
+      csvLines.push(header.map(escapeCell).join(','));
+      rows.forEach(r => {
+        csvLines.push(r.map(escapeCell).join(','));
+      });
+
+      const blob = new Blob([csvLines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      a.href = url;
+      a.download = `wound_healing_results_${timestamp}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    });
+
+    batchAnalyzeBtn.addEventListener('click', async () => {
+      if (!globalUmPerPixel) {
+        alert('Please define a scale bar on one image first (pixels to µm).');
+        return;
+      }
+      if (!files || files.length === 0) {
+        alert('No images loaded to analyze.');
+        return;
+      }
+
+      statusEl.textContent = 'Starting batch analysis...';
+      for (let i = 0; i < files.length; i++) {
+        const loaded = await loadImageForBatch(i);
+        if (!loaded) continue;
+        await new Promise(r => requestAnimationFrame(r));
+        const ok = autoDetectFronts();
+        if (!ok) {
+          // still record a row indicating failure
+          addAnalysisResult(files[i].name + ' (failed)', 0, 0, globalUmPerPixel, parseFloat(realLengthInput.value));
+          continue;
+        }
+
+        const poly = [];
+        upperPoints.forEach(p => poly.push(p));
+        for (let j = lowerPoints.length - 1; j >= 0; j--) {
+          poly.push(lowerPoints[j]);
+        }
+
+        const areaPx2 = polygonArea(poly);
+        const areaUm2 = areaPx2 * globalUmPerPixel * globalUmPerPixel;
+        const realLen = parseFloat(realLengthInput.value);
+        addAnalysisResult(files[i].name, areaPx2, areaUm2, globalUmPerPixel, realLen);
+      }
+      statusEl.textContent = 'Batch analysis finished.';
+      drawAll();
+    });
+
+    statusEl.textContent = 'Please upload a microscopy image first.';
+  </script>
+</body>
+</html>
